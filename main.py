@@ -3,6 +3,7 @@ import requests
 import os
 import threading
 import time
+import sys
 from flask import Flask
 
 # --- INTERFACE WEB ---
@@ -13,6 +14,7 @@ def home():
     return "embracetime AI está online! 🚀"
 
 def run_web():
+    # O Render usa a porta 10000 por defeito
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
@@ -27,26 +29,27 @@ PASS_IRC = "Nasomet112#"
 CHANNEL = "#TheOG"
 
 def log_event(msg):
-    """Função para imprimir logs bonitos no painel do Render"""
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] {msg}")
+    """Força o log a aparecer imediatamente no Render"""
+    timestamp = time.strftime("%H:%M:%S")
+    print(f"[{timestamp}] {msg}", flush=True)
+    sys.stdout.flush()
 
 def ask_ai(message, author):
     if not HF_TOKEN:
-        return "Falta o HF_TOKEN no Render! 😅"
+        return "Falta o HF_TOKEN nas definições do Render! 😅"
     
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
     prompt = (f"Tu és o {NICK_FIXO}, uma IA jovem e descontraída no IRC da PTNet. "
-              f"Responde em PT-PT de forma curta e jovial. "
+              f"Responde sempre em PT-PT de forma curta e jovial. "
               f"O {author} disse: {message}\nResposta:")
     
     try:
         payload = {"inputs": prompt, "parameters": {"max_new_tokens": 60, "temperature": 0.8}}
         r = requests.post(API_URL, headers=headers, json=payload, timeout=10)
         res = r.json()[0]['generated_text'].split("Resposta:")[-1].strip()
-        return res if res else "Tive um branco agora! 😂"
+        return res if res else "Tive um branco... 😎"
     except:
-        return "O meu cérebro de silício fritou um bocadinho... 🤖"
+        return "O meu cérebro fritou... tenta de novo! 🤖"
 
 def run_irc():
     srv_idx = 0
@@ -55,13 +58,13 @@ def run_irc():
         port = PORTAS[srv_idx % len(PORTAS)]
         
         try:
-            log_event(f"A tentar ligar a {server}:{port}...")
+            log_event(f"INICIANDO: A tentar {server}:{port}...")
             irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             irc.settimeout(20)
             irc.connect((server, port))
 
             irc.send(f"NICK {NICK_FIXO}\r\n".encode('utf-8'))
-            irc.send(f"USER {NICK_FIXO} 8 * :IA embracetime\r\n".encode('utf-8'))
+            irc.send(f"USER {NICK_FIXO} 8 * :IA {NICK_FIXO} jovial\r\n".encode('utf-8'))
 
             irc.settimeout(None)
             while True:
@@ -71,38 +74,41 @@ def run_irc():
                 for line in buffer.split("\r\n"):
                     if not line: continue
                     
-                    # Manter vivo
+                    # Log de tudo o que o servidor envia (DEBUG)
+                    if "PING" not in line: # Não encher o log com PINGs
+                        log_event(f"IRC: {line}")
+
                     if line.startswith("PING"):
                         irc.send(f"PONG {line.split()[1]}\r\n".encode('utf-8'))
                     
-                    # Identificar no NickServ ao ligar (001 é o sinal de sucesso)
+                    # Ao ligar com sucesso
                     if " 001 " in line:
-                        log_event(f"!!! Ligado como {NICK_FIXO}. A identificar... !!!")
+                        log_event("!!! LIGADO !!! A identificar no NickServ...")
                         irc.send(f"PRIVMSG NickServ :IDENTIFY {PASS_IRC}\r\n".encode('utf-8'))
-                        time.sleep(2) # Esperar um pouco para a autenticação processar
+                        time.sleep(5) 
                         irc.send(f"JOIN {CHANNEL}\r\n".encode('utf-8'))
-                        log_event(f"Comando JOIN enviado para {CHANNEL}")
+                        log_event(f"Tentei entrar no canal {CHANNEL}")
 
-                    # Logs de Conversas e Interações
+                    # Capturar mensagens do Canal
                     if " PRIVMSG " in line:
-                        parts = line.split("!")
-                        user = parts[0][1:]
-                        msg_content = line.split(" :", 1)[1]
-                        
-                        # LOG DA CONVERSA (Verás isto no Render)
-                        log_event(f"CHAT [{user}]: {msg_content}")
-                        
-                        # Resposta da IA
-                        if NICK_FIXO.lower() in msg_content.lower():
-                            resposta = ask_ai(msg_content, user)
-                            irc.send(f"PRIVMSG {CHANNEL} :{user}: {resposta}\r\n".encode('utf-8'))
-                            log_event(f"RESPOSTA [embracetime]: {resposta}")
+                        user = line.split('!')[0][1:]
+                        if " :" in line:
+                            msg_content = line.split(" :", 1)[1]
+                            log_event(f"CHAT [{user}]: {msg_content}")
+                            
+                            if NICK_FIXO.lower() in msg_content.lower():
+                                resposta = ask_ai(msg_content, user)
+                                irc.send(f"PRIVMSG {CHANNEL} :{user}: {resposta}\r\n".encode('utf-8'))
+                                log_event(f"RESPOSTA: {resposta}")
                             
         except Exception as e:
-            log_event(f"Erro: {e}. A saltar de servidor em 20s...")
+            log_event(f"ERRO: {e}. A saltar de servidor em 20s...")
             srv_idx += 1
             time.sleep(20)
 
 if __name__ == "__main__":
-    threading.Thread(target=run_web, daemon=True).start()
+    # Inicia a thread Web
+    t = threading.Thread(target=run_web, daemon=True)
+    t.start()
+    # Inicia o IRC
     run_irc()
