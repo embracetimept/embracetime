@@ -5,7 +5,7 @@ import threading
 import time
 from flask import Flask
 
-# --- INTERFACE WEB (Para o Render ficar verde) ---
+# --- INTERFACE WEB (Obrigatória para o Render) ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -13,7 +13,7 @@ def home():
     return "embracetime AI está online! 🚀"
 
 def run_web():
-    # O Render atribui a porta automaticamente na variável PORT
+    # O Render define a porta automaticamente
     port = int(os.environ.get("PORT", 7860))
     app.run(host='0.0.0.0', port=port)
 
@@ -28,7 +28,7 @@ CHANNEL = "#TheOG"
 
 def ask_ai(message, author):
     if not HF_TOKEN:
-        return "Falta o HF_TOKEN no Render, malta! 😅"
+        return "Falta o HF_TOKEN nas definições do Render! 😅"
     
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
     prompt = (f"Tu és o {NICK_FIXO}, uma IA muito jovem e descontraída no IRC da PTNet. "
@@ -44,9 +44,9 @@ def ask_ai(message, author):
         r = requests.post(API_URL, headers=headers, json=payload, timeout=10)
         full_text = r.json()[0]['generated_text']
         res = full_text.split(f"Resposta do {NICK_FIXO}:")[-1].strip()
-        return res if res else "Ya, apanhaste-me sem palavras! 😎"
+        return res if res else "Ya, não sei o que dizer a isso! 😎"
     except:
-        return "O meu cérebro fritou... tenta outra vez! 🤖"
+        return "O meu cérebro de silício fritou, tenta de novo! 🤖"
 
 def run_irc():
     srv_idx = 0
@@ -79,7 +79,6 @@ def run_irc():
 
                     if " PRIVMSG " in line:
                         user = line.split('!')[0][1:]
-                        # Garante que a mensagem tem o formato correto
                         if " :" in line:
                             msg_content = line.split(" :", 1)[1]
                             
@@ -88,18 +87,10 @@ def run_irc():
                                 irc.send(f"PRIVMSG {CHANNEL} :{user}: {resposta}\r\n".encode('utf-8'))
                             
         except Exception as e:
-            print(f"Erro: {e}. A saltar de servidor...")
+            print(f"Erro: {e}. A tentar de novo em 20s...")
             srv_idx += 1
             time.sleep(20)
 
 if __name__ == "__main__":
-    # Inicia a interface web (Flask) numa thread
     threading.Thread(target=run_web, daemon=True).start()
-    # Inicia o bot de IRC
     run_irc()
-
-if __name__ == "__main__":
-    # Thread para a Web App (Flask)
-    threading.Thread(target=run_web, daemon=True).start() [cite: 64]
-    # Loop do IRC
-    run_irc() [cite: 65]
